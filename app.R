@@ -1,21 +1,13 @@
 # app.R
 library(shiny)
 library(readtext)
-library(readr)
 library(quanteda)
 library(dplyr)
 library(ggplot2)
 
 library(quanteda.textplots)
 library(quanteda.textstats)
-library(quanteda.textmodels)
-library(stringr)
-library(seededlda)
-library(lubridate)
-library(lexicon)
-library(FactoMineR)
 library(topicmodels)
-library(spacyr)
 
 ##### UI #####
 
