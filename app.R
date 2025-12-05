@@ -45,9 +45,10 @@ ui <- fluidPage(
           .loading-text {
             margin-top: 2rem;
             background: gold;
-            padding: 1rem 2rem;
-            border-radius: 8px;
-            //width: fit-content;
+            padding: 0.5rem 1.1rem;
+            border-radius: 20px;
+            font-size: smaller;
+            width: fit-content;
           }
           .scroll-x {
             width: 100%;
@@ -59,25 +60,13 @@ ui <- fluidPage(
           }
       ")),
       
-      p(
-        class = "intro",
-        "This R-based app lets you upload .docx files (often UX interview summaries)",
-        "and run several types of text analysis. Your data is never stored or shared."
-      ),
-      p(
-        "Created by ",
-        a("Paul Amat", href = "https://paulamatdesign.github.io/", target = "_blank")
-      ),
-      p(
-        class = "citation",
-        a("GitHub and Licence details", href = "https://github.com/paulamatdesign/textualanalysis", target = "_blank"),
-        "-","Made with Quanteda: Benoit, Kenneth, Kohei Watanabe, Haiyan Wang, Paul 
-          Nulty, Adam Obeng, 
-         Stefan Müller, and Akitaka Matsuo. (2018) “quanteda: An R package for 
-         the quantitative analysis of textual data”. Journal of Open Source 
-         Software 3(30), 774. ",
-          a("https://doi.org/10.21105/joss.00774.", href = "https://doi.org/10.21105/joss.00774.", target = "_blank")        
-      ),
+      p(HTML(
+        'This R-based app lets you upload .docx files (often UX interview summaries) and run several types of text analysis. Your data is never stored or shared. Created by <a href="https://paulamatdesign.github.io/" target="_blank">Paul Amat</a>.'
+      ), class = "intro"),
+      
+      p(HTML(
+        'See <a href="https://github.com/paulamatdesign/textualanalysis" target="_blank">GitHub and Licence details</a>. Made with <a href="https://quanteda.io/" target="_blank">Quanteda</a>.'
+      ), class = "citation"),
       
       fileInput("docs", "Upload .docx file(s)", multiple = TRUE, accept = ".docx"),
       
@@ -92,46 +81,6 @@ ui <- fluidPage(
 ##### Server #####
 
 server <- function(input, output, session) {
-  
-  # Load files (user-uploaded or examples/)
-  datafiles <- reactive({
-    # trigger on either docs or example button
-    if (input$load_example > 0) {
-      example_files <- list.files("examples", pattern = "\\.docx$", full.names = TRUE)
-      req(length(example_files) > 0)
-      imported <- readtext(example_files)
-    } else {
-      req(input$docs)
-      imported <- readtext(input$docs$datapath)
-    }
-    imported
-  })
-  
-  # Build raw corpus
-  raw <- reactive({
-    imported <- datafiles()
-    
-    data <- data.frame(
-      doc_id = imported$doc_id,
-      text   = imported$text,
-      stringsAsFactors = FALSE
-    )
-    
-    corpus(data, text_field = "text")
-  })
-  
-  # Build clean corpus
-  corp <- reactive({
-    raw() %>%
-    tokens(remove_punct = TRUE) %>%
-      tokens_replace(
-        pattern     = lexicon::hash_lemmas$token,
-        replacement = lexicon::hash_lemmas$lemma
-      ) %>%
-      tokens_wordstem() %>%
-      dfm() %>%
-      dfm_remove(pattern = stopwords("en"))
-  })
   
   # Only show analysis UI once we have some data
   output$analysis_panels <- renderUI({
@@ -195,8 +144,49 @@ server <- function(input, output, session) {
         "Maps documents in a 2D space based on their vocabulary, helping you see ",
         "which texts are similar or different from each other."
       ),
+      p("At least 3 documents must be loaded.", class = "loading-text"),
       div(class = "scroll-x", plotOutput("show_ca"))
     )
+  })
+  
+  # Load files (user-uploaded or examples/)
+  datafiles <- reactive({
+    # trigger on either docs or example button
+    if (input$load_example > 0) {
+      example_files <- list.files("examples", pattern = "\\.docx$", full.names = TRUE)
+      req(length(example_files) > 0)
+      imported <- readtext(example_files)
+    } else {
+      req(input$docs)
+      imported <- readtext(input$docs$datapath)
+    }
+    imported
+  })
+  
+  # Build raw corpus
+  raw <- reactive({
+    imported <- datafiles()
+    
+    data <- data.frame(
+      doc_id = imported$doc_id,
+      text   = imported$text,
+      stringsAsFactors = FALSE
+    )
+    
+    corpus(data, text_field = "text")
+  })
+  
+  # Build clean corpus
+  corp <- reactive({
+    raw() %>%
+      tokens(remove_punct = TRUE) %>%
+      tokens_replace(
+        pattern     = lexicon::hash_lemmas$token,
+        replacement = lexicon::hash_lemmas$lemma
+      ) %>%
+      tokens_wordstem() %>%
+      dfm() %>%
+      dfm_remove(pattern = stopwords("en"))
   })
   
   #### TOKEN TABLE ####
