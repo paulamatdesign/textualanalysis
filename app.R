@@ -42,6 +42,13 @@ ui <- fluidPage(
           .intro {
             font-size: larger;
           }
+          .loading-text {
+            margin-top: 2rem;
+            background: gold;
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            //width: fit-content;
+          }
           .scroll-x {
             width: 100%;
             overflow-x: auto;
@@ -55,8 +62,7 @@ ui <- fluidPage(
       p(
         class = "intro",
         "This R-based app lets you upload .docx files (often UX interview summaries)",
-        "and run several types of text analysis. Your data is never stored or shared.",
-        "Loading may take a few seconds."
+        "and run several types of text analysis. Your data is never stored or shared."
       ),
       p(
         "Created by ",
@@ -101,8 +107,8 @@ server <- function(input, output, session) {
     imported
   })
   
-  # Build quanteda corpus
-  corp <- reactive({
+  # Build raw corpus
+  raw <- reactive({
     imported <- datafiles()
     
     data <- data.frame(
@@ -114,22 +120,29 @@ server <- function(input, output, session) {
     corpus(data, text_field = "text")
   })
   
+  # Build clean corpus
+  corp <- reactive({
+    raw() %>%
+    tokens(remove_punct = TRUE) %>%
+      tokens_replace(
+        pattern     = lexicon::hash_lemmas$token,
+        replacement = lexicon::hash_lemmas$lemma
+      ) %>%
+      tokens_wordstem() %>%
+      dfm() %>%
+      dfm_remove(pattern = stopwords("en"))
+  })
+  
   # Only show analysis UI once we have some data
   output$analysis_panels <- renderUI({
     req(datafiles())
-    
     tagList(
+      p("Loading... It may take a few seconds.", class = "loading-text"),
       h3("Token Table (extract)"),
       p(
         "Shows a small sample of the document–feature matrix built from your files."
       ),
       div(class = "scroll-x", tableOutput("show_tokens")),
-      
-      h3("Token Table Cleaned (extract)"),
-      p(
-        "Document-feature matrix cleaned, so you can see how the text is turned into data for the other analyses."
-      ),
-      div(class = "scroll-x", tableOutput("show_tokens_cleaned")),
       
       h3("KWIC Search"),
       p(
@@ -186,48 +199,17 @@ server <- function(input, output, session) {
     )
   })
   
-  
   #### TOKEN TABLE ####
   output$show_tokens <- renderTable({
-    dfm_matrix <- corp() %>%
-      tokens() %>%
-      dfm()
+    df <- corp() %>%
+      convert(to = "data.frame")
     
-    df <- convert(dfm_matrix, to = "data.frame")
-    
-    # keep a small extract
-    df %>% head(10)
-  })
-  
-  #### TOKEN TABLE CLEANED ####
-  output$show_tokens_cleaned <- renderTable({
-    dfm_matrix <- corp() %>%
-      tokens(remove_punct = TRUE) %>%
-      tokens_replace(
-        pattern     = lexicon::hash_lemmas$token,
-        replacement = lexicon::hash_lemmas$lemma
-      ) %>%
-      tokens_wordstem() %>%
-      dfm() %>%
-      dfm_remove(pattern = stopwords("en"))
-    
-    df <- convert(dfm_matrix, to = "data.frame")
-    
-    # keep a small extract
-    df %>% head(10)
+    head(df, 10)[ , 1:12]
   })
   
   #### CORRESPONDENCE ANALYSIS ####
   output$show_ca <- renderPlot({
     tmod_ca <- corp() %>%
-      tokens(remove_punct = TRUE) %>%
-      tokens_replace(
-        pattern     = lexicon::hash_lemmas$token,
-        replacement = lexicon::hash_lemmas$lemma
-      ) %>%
-      tokens_wordstem() %>%
-      dfm() %>%
-      dfm_remove(pattern = stopwords("en")) %>%
       textmodel_ca()
     
     dat_ca <- data.frame(
@@ -262,14 +244,6 @@ server <- function(input, output, session) {
   #### WORDCLOUD ####
   output$show_wordcloud <- renderPlot({
     corp() %>%
-      tokens(remove_punct = TRUE) %>%
-      tokens_replace(
-        pattern     = lexicon::hash_lemmas$token,
-        replacement = lexicon::hash_lemmas$lemma
-      ) %>%
-      tokens_wordstem() %>%
-      dfm() %>%
-      dfm_remove(pattern = stopwords("en")) %>%
       textplot_wordcloud(max_words = 80, rotation = 0, min_size = 0.85)
   })
   
@@ -277,7 +251,7 @@ server <- function(input, output, session) {
   output$show_kwic <- renderTable({
     req(input$kwic_pattern)
     
-    kw <- corp() %>%
+    x <- raw() %>%
       tokens(remove_punct = TRUE) %>%
       tokens_replace(
         pattern     = lexicon::hash_lemmas$token,
@@ -285,21 +259,13 @@ server <- function(input, output, session) {
       ) %>%
       kwic(pattern = input$kwic_pattern, window = 7) %>%
       head(10)
-    
-    df <- as.data.frame(kw)[, c("docname", "from", "to", "pre", "keyword", "post")]
-    df
+      
+      as.data.frame(x)[, c("docname", "from", "to", "pre", "keyword", "post")]
   })
   
   #### LDA TOPICS ####
   output$show_lda <- renderTable({
-    dfm <- corp() %>%
-      tokens(remove_punct = TRUE) %>%
-      tokens_replace(
-        pattern     = lexicon::hash_lemmas$token,
-        replacement = lexicon::hash_lemmas$lemma
-      ) %>%
-      dfm() %>%
-      dfm_remove(pattern = stopwords("en"))
+    dfm <- corp()
     
     # simple guard: need enough features for LDA
     req(nfeat(dfm) > 0, ndoc(dfm) > 1)
@@ -312,7 +278,7 @@ server <- function(input, output, session) {
   
   #### SENTIMENT ####
   output$show_sentiment <- renderTable({
-    corp() %>%
+    raw() %>%
       tokens(remove_punct = TRUE) %>%
       tokens_replace(
         pattern     = lexicon::hash_lemmas$token,
@@ -338,13 +304,6 @@ server <- function(input, output, session) {
     req(input$network_limit)
     
     corp() %>%
-      tokens(remove_punct = TRUE) %>%
-      tokens_replace(
-        pattern     = lexicon::hash_lemmas$token,
-        replacement = lexicon::hash_lemmas$lemma
-      ) %>%
-      dfm() %>%
-      dfm_remove(pattern = stopwords("en")) %>%
       fcm() %>%
       textplot_network(min_freq = input$network_limit)
   })
@@ -354,14 +313,6 @@ server <- function(input, output, session) {
     req(input$freq_limit)
     
     d <- corp() %>%
-      tokens(remove_punct = TRUE) %>%
-      tokens_replace(
-        pattern     = lexicon::hash_lemmas$token,
-        replacement = lexicon::hash_lemmas$lemma
-      ) %>%
-      tokens_wordstem() %>%
-      dfm() %>%
-      dfm_remove(pattern = stopwords("en")) %>%
       textstat_frequency(n = input$freq_limit)
     
     d %>%
