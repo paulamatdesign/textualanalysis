@@ -295,7 +295,7 @@ server <- function(input, output, session) {
     
     corp() %>%
       fcm() %>%
-      textplot_network(min_freq = input$network_limit)
+      textplot_network(min_freq = input$network_limit, edge_size = 1)
   })
   
   #### FREQUENCY PLOT ####
